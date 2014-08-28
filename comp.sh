@@ -7,7 +7,7 @@ do
 	fi
 done
 
-for i in dist
+for i in dist debug
 do
 	if [ -d "$i" ]
 	then
@@ -16,31 +16,52 @@ do
 	fi
 done
 
-mkdir "dist"
-cp -R "./source" "./dist/"
+#check if system has java installed for compression of .js and .css files
+if command -v java >/dev/null 2>&1
+then
+	export JAVAEXISTS=true
+else
+	export JAVAEXISTS=false
+	echo "Java not found. Will continue without compacting .js and .css files." | tee -a log.txt
+fi
 
-echo "Processing javascript files..." | tee -a log.txt
-#for i in ./source/js/*.js
-for i in ./dist/source/js/*.js
+for i in dist debug
 do
-	echo "### Processing $i" | tee -a log.txt
-	java -jar yuicompressor.jar --type js "$i" -o "$i" -v --charset utf-8 2>>log.txt
-	#java -jar closure.jar --compilation_level SIMPLE_OPTIMIZATIONS --language_in ECMASCRIPT5 --js "$i" --js_output_file "./dist/$i" 2>>log.txt
+	cp -r source $i
+
+	if [ $JAVAEXISTS == true ]; then	#only try to compress the files if Java is available
+		if [ $i == "dist" ]; then		#only compress files on the distributed version, not the debug version
+			echo "Compacting javascript files..." | tee -a log.txt
+			for j in ./$i/js/*.js
+			do
+				echo "### Processing $j" | tee -a log.txt
+				java -jar yuicompressor-2.4.8.jar --type js "$j" -o "$j" -v --charset utf-8 2>&1 | tee -a log.txt
+				#java -jar closure.jar --compilation_level SIMPLE_OPTIMIZATIONS --language_in ECMASCRIPT5 --js "$i" --js_output_file "./dist/$i" 2>>log.txt
+			done
+
+			echo "Compacting css files..." | tee -a log.txt
+			for j in ./$i/css/*.css
+			do
+				echo "### Processing $j" | tee -a log.txt
+				java -jar yuicompressor-2.4.8.jar --type css "$j" -o "$j" -v --charset utf-8 2>&1 | tee -a log.txt
+			done
+		fi
+	fi
+
+	if [ -e $i.pem ]; then	#if there's an extension certificate file, then use chrome to build with that certificate
+		echo "Creating $i .crx" | tee -a log.txt
+		google-chrome --pack-extension=source/ --pack-extension-key=$i.pem | tee -a log.txt
+		mv source.crx $i.crx
+	fi
+
+	echo "Compressing $i" | tee -a log.txt
+	pushd $i >/dev/null
+	zip -r -9 ../$i.zip * 2>&1 | tee -a ../log.txt
+	popd >/dev/null
+
+	#cleanup
+	rm -rf $i
+
 done
 
-echo "Processing css files..." | tee -a log.txt
-for i in ./dist/source/css/*.css
-do
-	echo "### Processing $i" | tee -a log.txt
-	java -jar yuicompressor.jar --type css "$i" -o "$i" -v --charset utf-8 2>>log.txt
-done
-
-echo "Compressing dist" | tee -a log.txt
-7z a -tzip -mx=9 dist.zip ./dist/source/* 2>>log.txt 
-
-echo "Compressing debug" | tee -a log.txt
-7z a -tzip -mx=9 debug.zip ./source/* 2>>log.txt 
-
-rm -rf "dist"
-
-less < log.txt
+echo "Done" | tee -a log.txt

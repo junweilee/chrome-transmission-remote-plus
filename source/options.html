@@ -3,7 +3,7 @@
 <head>
 	<title>Remote Transmission Options</title>
 	<link rel="stylesheet" type="text/css" href="css/options.css" />
-	<script type="text/javascript" src="js/jquery-1.9.1.min.js"></script>
+	<script type="text/javascript" src="js/jquery-2.1.1.min.js"></script>
 	<script type="text/javascript" src="js/options.js"></script>
 </head>
 
@@ -25,12 +25,12 @@
 				<div class="clear"></div>
 			</li>
 			<li>
-				<label class="section" for="rpc">RPC Path</label>
+				<label class="section" for="rpcPath">RPC Path</label>
 				<input id="rpcPath" type="text" />
 				<div class="clear"></div>
 			</li>
 			<li>
-				<label class="section" for="web">Web Path</label>
+				<label class="section" for="webPath">Web Path</label>
 				<input id="webPath" type="text" />
 				<div class="clear"></div>
 			</li>
@@ -51,19 +51,27 @@
 		<legend>General</legend>
 		<ul>
 			<li>
-				<label class="section" for="notifications">
+				<label class="section" for="notificationstorrentfinished">
 					Desktop Notification<br />
 					<span class="small">(when a torrent finishes)</span>
 				</label>
-				<input id="notifications" type="checkbox" />
+				<input id="notificationstorrentfinished" type="checkbox" />
 				<div class="clear"></div>
 			</li>
 			<li>
-				<label class="section" for="browsernotificationtimeout">
+				<label class="section" for="notificationsnewtorrent">
+					Desktop Notification<br />
+					<span class="small">(when adding new torrents)</span>
+				</label>
+				<input id="notificationsnewtorrent" type="checkbox" />
+				<div class="clear"></div>
+			</li>
+			<li>
+				<label class="section" for="browserbadgetimeout">
 					Icon Notification Timeout<br />
 					<span class="small">(how long add/dup/fail is shown)</span>
 				</label>
-				<select id="browsernotificationtimeout">
+				<select id="browserbadgetimeout">
 					<option value="100">100ms</option>
 					<option value="250">250ms</option>
 					<option value="500">500ms</option>
@@ -71,6 +79,20 @@
 					<option value="2000">2s</option>
 					<option value="5000">5s</option>
 					<option value="10000">10s</option>
+				</select>
+				<div class="clear"></div>
+			</li>
+			<li>
+				<label class="section" for="popuprefreshinterval">
+					Popup Refresh Interval<br />
+					<span class="small">(how often the popup is refreshed)</span>
+				</label>
+				<select id="popuprefreshinterval">
+					<option value="100">100ms</option>
+					<option value="1000">1s</option>
+					<option value="3000">3s</option>
+					<option value="10000">10s</option>
+					<option value="30000">30s</option>
 				</select>
 				<div class="clear"></div>
 			</li>
@@ -97,19 +119,14 @@
 				<fieldset>
 					<legend>Location</legend>
 					<div class="options">
-						<input id="dldefault" name="dlocation" type="radio" />
-						<label for="dldefault">Always use the default directory</label><br />
-						<blockquote>
-							<input id="dlpopup" type="checkbox" />
-							<label for="dlpopup">Show download popup</label><br />
-						</blockquote>
-						<input id="dlcustom" name="dlocation" type="radio" />
-						<label for="dlcustom">Choose a custom directory</label><br />
+						<input id="dlpopup" type="checkbox" />
+						<label for="dlpopup">Show download popup</label><br><br>
+						<label><b>Custom Directories</b><br>Add custom directories below. These custom directories will show up in the download popup.</label>
 						<table id="customdirs">
 							<tr>
 								<th>Label</th>
 								<th>Directory</th>
-								<th></th>
+								<th>&nbsp;</th>
 							</tr>
 							<tr class="addcustom">
 								<td><input id="customlabel" class="label" type="text" /></td>

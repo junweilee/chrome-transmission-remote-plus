@@ -1,7 +1,8 @@
 
 // global variables
 var completedTorrents = '',		// string of completed torrents to prevent duplicate notifications
-	notificationTimer;			// timer for displaying notifications
+	notificationTimer,
+	torrentInfo = {};			// timer for displaying notifications
 
 /*=================================================================================
  showBadge(string text, RGBA color, milliseconds duration)
@@ -17,10 +18,41 @@ var completedTorrents = '',		// string of completed torrents to prevent duplicat
 	nothing
 =================================================================================*/
 function showBadge(text, color, duration) {
+
+	duration = (duration == undefined) ? localStorage.browserbadgetimeout : duration;
+
 	chrome.browserAction.setBadgeBackgroundColor({ color: color });
 	chrome.browserAction.setBadgeText({ text: text });
 
 	setTimeout(function () { chrome.browserAction.setBadgeText({ 'text': '' }); }, duration);
+}
+
+/*=================================================================================
+ showNotification(string title, string message)
+
+ displays a text badge on the browser icon
+
+ parameters
+	message: (required) title of notification
+	   text: (required) text to display
+
+ returns
+	nothing
+=================================================================================*/
+function showNotification(title, message) {
+
+	var options = {
+		type: "basic",
+		title: title,
+		message: message,
+		iconUrl: "images/icon128.png"
+	};
+
+	var creationCallback = function() { /* Error checking goes here */ };
+
+	if (localStorage.notificationsnewtorrent == "true") {
+		chrome.notifications.create("tadd"+Math.random(), options, creationCallback);
+	}
 }
 
 /*=================================================================================
@@ -50,18 +82,19 @@ function rpcTransmission(args, method, tag, callback) {
 	).complete(
 		function(jqXHR, textStatus) {
 			var xSid = jqXHR.getResponseHeader('X-Transmission-Session-Id');
-			if(xSid) {
+			if(xSid) {	//X-Transmission-Session-Id should only be included if we didn't include it when we sent our request
 				localStorage.sessionId = xSid;
-				return rpcTransmission(args, method, tag, callback);
+				rpcTransmission(args, method, tag, callback);
+				return;
 			}
-			if (jqXHR.responseText == ""){		//If the server is unreachable, get null request
+			if (textStatus == "error"){		//If the server is unreachable, get null request
 				callback(JSON.parse(
-					'{"arguments":{"torrents":[{"addedDate":0,"doneDate":0,"downloadDir":"","eta":-1,"id":1,"leftUntilDone":0,"metadataPercentComplete":1,"name":"Unable to connect to '+localStorage.server+'.","rateDownload":0,"rateUpload":0,"recheckProgress":0,"sizeWhenDone":0,"status":0,"uploadedEver":0}]},"result":"success","tag":1}'
+					'{"arguments":{"torrents":[{"addedDate":0,"doneDate":0,"downloadDir":"","eta":0,"id":0,"leftUntilDone":0,"metadataPercentComplete":0,"name":"Unable to connect to '+localStorage.server+'.","rateDownload":0,"rateUpload":0,"recheckProgress":0,"sizeWhenDone":0,"status":0,"uploadedEver":0}]},"result":"Unable to connect to server.","tag":1}'
 				));
 				return;
 			}
 			if (callback) {
-				callback(JSON.parse(jqXHR.responseText));
+				callback(jqXHR.responseJSON);
 			}
 		}
 	);
@@ -79,35 +112,39 @@ function rpcTransmission(args, method, tag, callback) {
 	nothing
 =================================================================================*/
 function getTorrent(url) {
-	var dirs = (localStorage.dLocation === 'dlcustom') ? JSON.parse(localStorage.dirs) : [];
+	var dirs = (localStorage.dirs) ? JSON.parse(localStorage.dirs) : [];
 	// don't use base64 on magnet links
 	if (url.toLowerCase().indexOf('magnet:') > -1) {
 		// show download popup?
-		if (localStorage.dLocation === 'dldefault' && localStorage.dlPopup === 'false') {
+		if (localStorage.dlPopup === 'false') {
 			dlTorrent({ 'url': url });
 		} else {
-			chrome.windows.create({ 'url': 'downloadMagnet.html', 'type': 'popup', 'width': 852, 'height': 138 }, function(window) {
-				chrome.tabs.sendMessage(window.tabs[0].id, { 'url': url, 'dirs': dirs });
+			torrentInfo['magnet'] = { 'dirs': dirs, 'url': url };
+			chrome.windows.create({
+				'url': 'downloadMagnet.html',
+				'type': 'popup',
+				'width': 852,
+				'height': 160,
+				'left': screen.width/2 - 852/2,
+				'top': screen.height/2 - 160/2
 			});
 		}
 	} else {	//it's a .torrent
-		if (localStorage.dLocation === 'dldefault' && localStorage.dlPopup === 'false') {	//don't show the download popup
+		if (localStorage.dlPopup === 'false') {	//don't show the download popup
 			dlTorrent({ 'url': url });
 		} else {	//show the download popup
 			getFile(url, function(file) {
 				parseTorrent(file, function(torrent) {
 					if (torrent !== null) {
-						chrome.windows.create({
+						encodeFile(file, function(data) {
+							torrentInfo['torrent'] = { 'torrent': torrent, 'data': data, 'dirs': dirs };
+							chrome.windows.create({
 								'url': 'downloadTorrent.html',
 								'type': 'popup',
 								'width': 850,
-								'height': 580,
+								'height': 600,
 								'left': (screen.width/2) - 425,
-								'top': (screen.height/2) - 265,
-							},
-							function(window) {
-								encodeFile(file, function(data) {
-								chrome.tabs.sendMessage(window.tabs[0].id, { 'torrent': torrent, 'data': data, 'dirs': dirs });
+								'top': (screen.height/2) - 300,
 							});
 						});
 					} else {
@@ -160,16 +197,17 @@ function dlTorrent(request) {
 	// send the torrent to transmission
 	rpcTransmission(args, 'torrent-add', '', function (response) {
 		// show a badge on the browser icon depending on the response from Transmission
-		switch(response.result) {
-			case 'success':
-				showBadge('add', [0, 255, 0, 255], localStorage.browsernotificationtimeout);
-			break;
-			case 'duplicate torrent':
-				showBadge('dup', [0, 0, 255, 255], localStorage.browsernotificationtimeout);
-			break;
-			default:
-				showBadge('fail', [255, 0, 0, 255], localStorage.browsernotificationtimeout);
-				alert('Torrent download failed!\n\n' + response.result);
+		// show a badge on the browser icon depending on the response from Transmission
+		if (response.arguments["torrent-duplicate"]) {
+			showBadge('dup', [0, 0, 255, 255]);
+			showNotification("Duplicate torrent", "");
+		} else if (response.arguments["torrent-added"]) {
+			showBadge('add', [0, 255, 0, 255]);
+			showNotification("Torrent added successfully", response.arguments["torrent-added"].name);
+		} else {
+			showBadge('fail', [255, 0, 0, 255]);
+			showNotification("Adding torrent failed", "");
+			alert('Torrent download failed!\n\n' + response.result);
 		}
 	});
 }
@@ -263,8 +301,12 @@ chrome.extension.onConnect.addListener(function(port) {
 
 // recieve message to send torrent to transmission
 chrome.extension.onMessage.addListener(function(request, sender, sendResponse) {
-	dlTorrent(request);
-	sendResponse({});	// close connection cleanly
+	if(request.method == "get-torrent-info") {
+		sendResponse(torrentInfo[request.page]);
+	}else{
+		dlTorrent(request);
+		sendResponse({});	// close connection cleanly
+	}
 });
 
 /*=================================================================================
@@ -289,10 +331,27 @@ chrome.contextMenus.create({
 
 (function() {
 	// show notifications if they're enabled
-	if (localStorage.notifications === 'true') {
+	if (localStorage.notificationstorrentfinished === 'true') {
 		notificationRefresh();
 	}
 
 	// make sure users are up-to-date with their config
-	if (typeof localStorage.verConfig === 'undefined' || localStorage.verConfig < 5) chrome.tabs.create({ url: 'options.html' });
+	//                first install                                           upgraded extension                                          upgraded extension, new config version
+	if (localStorage.verConfig === "undefined" || chrome.app.getDetails().version !== localStorage.extensionVersion || chrome.app.getDetails().config_version !== localStorage.verConfig) {
+		chrome.tabs.create({ url: "options.html?newver=true" });
+	}
+
+	//This function runs when the extension is first loaded.
+	//If that's after tabs are already open, then we need to inject our script into them, or they won't pick up torrent/magnet link clicks.
+	chrome.windows.getAll({populate:true}, function(windows) {
+		for (var i = 0; i < windows.length; i++) {
+			for (var j = 0; j < windows[i].tabs.length; j++) {
+				if (windows[i].tabs[j].url.substr(0,4) == "http") {
+					console.log(windows[i].tabs[j].id+"\t"+windows[i].tabs[j].url);
+					chrome.tabs.executeScript(windows[i].tabs[j].id, {file: "js/inject.js"});
+				}
+			}
+		}
+	});
+
 })();

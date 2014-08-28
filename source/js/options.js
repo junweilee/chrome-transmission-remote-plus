@@ -21,11 +21,11 @@ function addDir(label, dir) {
 	var table = document.getElementById('customdirs');
 
 	// duplicate label
-	for (var i = 2, row; row = table.rows[i]; ++i) {
-		if (row.childNodes[0].childNodes[0].value === label) return;
+	for (var i = 1; i < table.rows.length-1; ++i) {
+		if (table.rows[i].childNodes[0].childNodes[0].value === label) return;
 	}
 
-	var rowElem = table.insertRow(-1),
+	var rowElem = table.insertRow(table.rows.length-1),
 		col1Elem = rowElem.insertCell(-1),
 		col2Elem = rowElem.insertCell(-1),
 		col3Elem = rowElem.insertCell(-1),
@@ -77,24 +77,27 @@ function save() {
 	localStorage.user = document.getElementById('user').value;
 	localStorage.pass = document.getElementById('pass').value;
 
-	localStorage.notifications = document.getElementById('notifications').checked;
-	localStorage.browsernotificationtimeout = document.getElementById('browsernotificationtimeout').value;
+	localStorage.notificationstorrentfinished = document.getElementById('notificationstorrentfinished').checked;
+	localStorage.notificationsnewtorrent = document.getElementById('notificationsnewtorrent').checked;
+
+	localStorage.browserbadgetimeout = document.getElementById('browserbadgetimeout').value;
 
 	// send message to background page to en/disable notifications
-	port.postMessage({ notifications: document.getElementById('notifications').checked });
+	port.postMessage({ notificationstorrentfinished: document.getElementById('notificationstorrentfinished').checked });
+	port.postMessage({ notificationsnewtorrent: document.getElementById('notificationsnewtorrent').checked });
 
+	//whether to handle the torrent click (i.e. download remotely) or leave to chrome to handle (download locally)
 	localStorage.clickAction = (document.getElementById('dlremote').checked) ? 'dlremote' : 'dllocal';
 
+	//whether or not to show the download popup
 	localStorage.dlPopup = document.getElementById('dlpopup').checked;
 
-	localStorage.dLocation = (document.getElementById('dldefault').checked) ? 'dldefault' : 'dlcustom';
-
 	// loop through the custom directories and save them
-	var table = document.getElementById('customdirs'), dirs = [];
-	for (var i = 2, row; row = table.rows[i]; ++i) {
-		dirs.push({ label: row.childNodes[0].childNodes[0].value, dir: row.childNodes[1].childNodes[0].value });
+	var table = document.getElementById('customdirs');
+	var dirs = [];
+	for (var i = 1; i < table.rows.length-1; ++i) {
+		dirs.push({ "label": table.rows[i].childNodes[0].childNodes[0].value, "dir": table.rows[i].childNodes[1].childNodes[0].value });
 	}
-
 	localStorage.dirs = JSON.stringify(dirs);
 
 	$("#saved").fadeIn(100);
@@ -102,37 +105,77 @@ function save() {
 }
 
 $(function() {
-	// set default options if this is a first time user or a new version
-	if (typeof localStorage.verConfig === 'undefined' || localStorage.verConfig < 5) {
-		if (typeof localStorage.server === 'undefined') localStorage.server = 'http://localhost:9091/transmission';
-		if (typeof localStorage.rpcPath === 'undefined') localStorage.rpcPath = '/rpc';
-		if (typeof localStorage.webPath === 'undefined') localStorage.webPath = '/web/';
-		if (typeof localStorage.user === 'undefined') localStorage.user = '';
-		if (typeof localStorage.pass === 'undefined') localStorage.pass = '';
-		if (typeof localStorage.notifications === 'undefined') localStorage.notifications = true;
-		if (typeof localStorage.browsernotificationtimeout === 'undefined') localStorage.browsernotificationtimeout = '1000';
-		if (typeof localStorage.clickAction === 'undefined') localStorage.clickAction = 'dlremote';
-		if (typeof localStorage.dlPopup === 'undefined') localStorage.dlPopup = true;
 
-		if (typeof localStorage.dLocation === 'undefined') {
-			if (typeof localStorage.dlocation !== 'undefined') {
-				localStorage.dLocation = localStorage.dlocation;
-			} else {
-				localStorage.dLocation = 'dldefault';
-				localStorage.dirs = '[]';
-			}
-		}
-
-		if (typeof localStorage.sessionId === 'undefined') localStorage.sessionId = '';
-		if (typeof localStorage.torrentType === 'undefined') localStorage.torrentType = 0;
-		if (typeof localStorage.torrentFilter === 'undefined') localStorage.torrentFilter = '';
-
-		// updated to the latest version
-		localStorage.verConfig = 5;
+	var VERCONFIG = 5;	//This value must be updated in background.js too
+	var defaults = {
+		"verConfig"						: VERCONFIG,
+		"server"						: "http://localhost:9091/transmission",
+		"rpcPath"						: "rpc",
+		"webPath"						: "web",
+		"user"							: "",
+		"pass"							: "",
+		"notificationstorrentfinished"	: true,
+		"notificationsnewtorrent"		: false,
+		"browserbadgetimeout"			: 1000,
+		"popuprefreshinterval"			: 3000,
+		"clickAction"					: "dlremote",
+		"dlPopup"						: true,
+		"dirs"							: "[]",
+		"sessionId"						: "",
+		"torrentType"					: 0,
+		"torrentFilter"					: ""
 	}
 
-	var dirs = JSON.parse(localStorage.dirs),
-		server = localStorage.server.match(/(https?):\/\/(.+):(\d+)\/?(.*)/);
+	/*
+	  Credit to Quentin at StackOverflow for this trick
+	  http://stackoverflow.com/questions/979975/how-to-get-the-value-from-url-parameter
+	*/
+	var QueryString = function () {
+		// This function is anonymous, is executed immediately and 
+		// the return value is assigned to QueryString!
+		var query_string = {};
+		var query = window.location.search.substring(1);
+		var vars = query.split("&");
+		for (var i=0;i<vars.length;i++) {
+		var pair = vars[i].split("=");
+			// If first entry with this name
+		if (typeof query_string[pair[0]] === "undefined") {
+			query_string[pair[0]] = pair[1];
+			// If second entry with this name
+		} else if (typeof query_string[pair[0]] === "string") {
+			var arr = [ query_string[pair[0]], pair[1] ];
+			query_string[pair[0]] = arr;
+			// If third or later entry with this name
+		} else {
+			query_string[pair[0]].push(pair[1]);
+		}
+		} 
+		return query_string;
+	} ();
+
+	//                       first install              big settings change
+	if (localStorage.verConfig === 'undefined' || localStorage.verConfig < VERCONFIG) {
+		//Reset everything to defaults
+		for (var i in defaults) {
+				localStorage[i] = defaults[i];
+		}
+	} else {	//user opened it, or it's been automatically opened
+		// set default options for any unset options - may be triggered on minor additions that don't require a full reconfiguration by the user
+		for (var i in defaults) {
+			if (typeof(localStorage[i]) === "undefined") {
+				localStorage[i] = defaults[i];
+			}
+		}
+		if (QueryString.newver) {	//if the window is being loaded automatically by the extension, then close it so the user doesn't have to worry about it
+			window.close();
+		}
+	}
+	localStorage.extensionVersion = chrome.app.getDetails().version;
+	localStorage.verConfig = chrome.app.getDetails().config_version;
+
+
+	var dirs = JSON.parse(localStorage.dirs);
+	var server = localStorage.server.match(/(https?):\/\/(.+):(\d+)\/?(.*)/);
 
 	// server
 	document.getElementById('protocol').value = server[1];
@@ -146,18 +189,19 @@ $(function() {
 	document.getElementById('user').value = localStorage.user;
 	document.getElementById('pass').value = localStorage.pass;
 
-	// general
-	document.getElementById('notifications').checked = (localStorage.notifications === 'true') ? true : false;
-	document.getElementById('browsernotificationtimeout').value = localStorage.browsernotificationtimeout;
+	// notifications
+	document.getElementById('notificationstorrentfinished').checked = (localStorage.notificationstorrentfinished === 'true');
+	document.getElementById('notificationsnewtorrent').checked = (localStorage.notificationsnewtorrent === 'true');
+
+	//badge timeout
+	document.getElementById('browserbadgetimeout').value = localStorage.browserbadgetimeout;
+
+	//popup refresh interval
+	document.getElementById('popuprefreshinterval').value = localStorage.popuprefreshinterval;
 
 	// download
 	document.getElementById(localStorage.clickAction).checked = true;
-	document.getElementById('dlpopup').checked = (localStorage.dlPopup === 'true') ? true : false;
-
-	document.getElementById(localStorage.dLocation).checked = true;
-	if (localStorage.dLocation === 'dlcustom') {
-		document.getElementById('dlpopup').disabled = true;
-	}
+	document.getElementById('dlpopup').checked = (localStorage.dlPopup === 'true');
 
 	// display the list of custom download directories
 	for (var i = 0, dir; dir = dirs[i]; ++i) {
